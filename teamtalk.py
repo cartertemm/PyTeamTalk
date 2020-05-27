@@ -1,4 +1,4 @@
-"""PyTeamtalk
+"""PyTeamTalk
 
 A wrapper around the TeamTalk 5 TCP API.
 
@@ -244,6 +244,7 @@ class TeamTalkServer:
 	def _subscribe_to_internal_events(self):
 		"""Subscribes to all internal events that keep track of the server's state.
 			self.users, self.me, self.channels, self.server_params, etc.
+		Called automatically
 		"""
 		self.subscribe("error", self._error)
 		self.subscribe("begin", self._begin)
@@ -256,7 +257,12 @@ class TeamTalkServer:
 	def get_channel(self, id):
 		"""Returns a dict of info for channels with the requested id.
 		If id is of type str, look for matching names
-		If id is an int, look for matching chanid's"""
+		If id is an int, look for matching chanid's
+		If id is a dict, we assume params are lazily being passed and try searching for a chanid"""
+		if isinstance(id, dict):
+			id = id.get("chanid")
+			if not id:
+				return
 		for channel in self.channels:
 			if isinstance(id, int) and int(channel["chanid"]) == id:
 				return channel
@@ -265,9 +271,15 @@ class TeamTalkServer:
 
 	def get_user(self, id):
 		"""Returns a dict of info for users with the requested id.
-		If id is of type str, look for matching names.
+		If id is of type str, look for matching names
 			Be careful, though, as teamtalk imposes no limit on users with identical names.
-		If id is an int, look for matching userid's"""
+		If id is an int, look for matching userid's
+		If id is a dict, we assume params are lazily being passed and try searching for a userid
+		"""
+		if isinstance(id, dict):
+			id = id.get("userid")
+			if not id:
+				return
 		for user in self.users:
 			if isinstance(id, int) and int(user["userid"]) == id:
 				return user
