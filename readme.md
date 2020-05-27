@@ -1,4 +1,4 @@
-# PyTeamtalk
+# PyTeamTalk
 
 A human-friendly wrapper around the Teamtalk 5 TCP API
 
