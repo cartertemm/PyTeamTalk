@@ -86,7 +86,7 @@ class TeamTalkServer:
 		self.con = None
 		self.pinger_thread = None
 		self.message_thread = None
-		self.disconnect = False
+		self.disconnecting = False
 		self.logging_in = False
 		self.current_id = 0
 		self.last_id = 0
@@ -138,13 +138,13 @@ class TeamTalkServer:
 
 	def read_line(self, timeout=None):
 		"""Reads and returns a line from the server"""
-		if self.disconnect:
+		if self.disconnecting:
 			return False
 		return self.con.read_until(b"\r\n", timeout)
 
 	def send(self, line):
 		"""Sends a line to the server"""
-		if self.disconnect:
+		if self.disconnecting:
 			return False
 		if isinstance(line, str):
 			line = line.encode()
@@ -155,32 +155,46 @@ class TeamTalkServer:
 	def disconnect(self):
 		"""Disconnect from this server.
 		Signals all threads to stop"""
-		self.disconnect = True
+		self.disconnecting = True
 		self.con.close()
 
-	def handle_messages(self):
-		"""Processes all incoming messages"""
-		while not self.disconnect:
-			line = self.read_line()
-			if not line:
-				break
+	def handle_messages(self, timeout=None, callback=None):
+		"""Processes all incoming messages
+		If callback is specified, it will be ran every time a new line is received from the server (or timeout seconds) along with an instance of this class, the event name, and parameters.
+		Please note: If timeout is None (or unspecified), the callback function may take a while to execute in instances when we aren't getting packets. This behavior may not be desireable for many applications.
+			If in doubt, set a timeout.
+			Also be wary of extremely small timeouts when handling larger lines
+		"""
+		while not self.disconnecting:
+			line = self.read_line(timeout)
 			if line == b"pong":
-				continue
+				# response to ping, which is handled internally
+				line = b"" # drop it
 			try:
 				line = line.decode()
 			except UnicodeDecodeError:
 				print("failed to decode line: " + line)
+				if callable(callback):
+					callback(self, "", {})
 				continue
+			if not line:
+				if callable(callback):
+					callback(self, "", {})
+				continue # nothing to do
 			event, params = parse_tt_message(line)
 			event = event.lower()
 			# Call messages for the event if necessary
 			for func in self.subscriptions.get(event, []):
 				func(self, params)
+			# finally, call the callback
+			if callable(callback):
+				callback(self, event, params)
+
 
 	def _sleep(self, seconds):
 		"""Like time.sleep, but immediately halts execution if we need to disconnect from a server"""
 		t = time.time()
-		while not self.disconnect and not time.time() - t >= seconds:
+		while not self.disconnecting and not time.time() - t >= seconds:
 			pass
 
 	def handle_pings(self):
@@ -188,7 +202,7 @@ class TeamTalkServer:
 		Intervals are calculated based on the server's usertimeout value.
 		This function always runs in it's own thread."""
 		pingtime = 0
-		while not self.disconnect:
+		while not self.disconnecting:
 			self.send("ping")
 			# in case usertimeout was changed somehow
 			# logic from TTCom, which had a preferable approach to TT clients for what we're doing
