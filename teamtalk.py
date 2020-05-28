@@ -15,6 +15,56 @@ import telnetlib
 import functools
 
 
+# constants
+## MSG Types
+NONE_MSG = 0
+USER_MSG = 1
+CHANNEL_MSG = 2
+BROADCAST_MSG = 3
+CUSTOM_MSG = 4
+
+## User rights (from library/teamTalkLib/teamtalk/common.h)
+USERRIGHT_NONE = 0x00000000
+USERRIGHT_MULTI_LOGIN = 0x00000001
+USERRIGHT_VIEW_ALL_USERS = 0x00000002
+USERRIGHT_CREATE_TEMPORARY_CHANNEL = 0x00000004
+USERRIGHT_MODIFY_CHANNELS = 0x00000008
+USERRIGHT_TEXTMESSAGE_BROADCAST = 0x00000010
+USERRIGHT_KICK_USERS = 0x00000020
+USERRIGHT_BAN_USERS = 0x00000040
+USERRIGHT_MOVE_USERS = 0x00000080
+USERRIGHT_OPERATOR_ENABLE = 0x00000100
+USERRIGHT_UPLOAD_FILES = 0x00000200
+USERRIGHT_DOWNLOAD_FILES = 0x00000400
+USERRIGHT_UPDATE_SERVERPROPERTIES = 0x00000800
+USERRIGHT_TRANSMIT_VOICE = 0x00001000
+USERRIGHT_TRANSMIT_VIDEOCAPTURE = 0x00002000
+USERRIGHT_TRANSMIT_DESKTOP = 0x00004000
+USERRIGHT_TRANSMIT_DESKTOPINPUT = 0x00008000
+USERRIGHT_TRANSMIT_MEDIAFILE_AUDIO = 0x00010000
+USERRIGHT_TRANSMIT_MEDIAFILE_VIDEO = 0x00020000
+USERRIGHT_TRANSMIT_MEDIAFILE = (
+	USERRIGHT_TRANSMIT_MEDIAFILE_AUDIO | USERRIGHT_TRANSMIT_MEDIAFILE_VIDEO
+)
+USERRIGHT_LOCKED_NICKNAME = 0x00040000
+USERRIGHT_LOCKED_STATUS = 0x00080000
+USERRIGHT_RECORD_VOICE = 0x00100000
+USERRIGHT_DEFAULT = (
+	USERRIGHT_MULTI_LOGIN
+	| USERRIGHT_VIEW_ALL_USERS
+	| USERRIGHT_CREATE_TEMPORARY_CHANNEL
+	| USERRIGHT_UPLOAD_FILES
+	| USERRIGHT_DOWNLOAD_FILES
+	| USERRIGHT_TRANSMIT_VOICE
+	| USERRIGHT_TRANSMIT_VIDEOCAPTURE
+	| USERRIGHT_TRANSMIT_DESKTOP
+	| USERRIGHT_TRANSMIT_DESKTOPINPUT
+	| USERRIGHT_TRANSMIT_MEDIAFILE
+)
+USERRIGHT_ALL = 0x0013FFFF
+USERRIGHT_KNOWN_MASK = 0x001FFFFF
+
+
 def parse_tt_message(message):
 	"""Parses a message sent by Teamtalk.
 	Also preserves datatypes.
@@ -264,7 +314,7 @@ class TeamTalkServer:
 			if not id:
 				return
 		for channel in self.channels:
-			if isinstance(id, int) and int(channel["chanid"]) == id:
+			if isinstance(id, int) and channel["chanid"] == id:
 				return channel
 			elif isinstance(id, str) and channel["channel"] == id:
 				return channel
@@ -281,7 +331,7 @@ class TeamTalkServer:
 			if not id:
 				return
 		for user in self.users:
-			if isinstance(id, int) and int(user["userid"]) == id:
+			if isinstance(id, int) and user["userid"] == id:
 				return user
 			elif isinstance(id, str) and user["userid"] == id:
 				return user
@@ -305,7 +355,7 @@ class TeamTalkServer:
 			end id=*
 		Messages are sent this way when ordering needs to be preserved.
 		"""
-		self.current_id = int(params["id"])
+		self.current_id = params["id"]
 		# Logging in sends a flood of "loggedin" and "addchannel" packets
 		# Handle these differently
 		if self.current_id == 1:
@@ -323,7 +373,7 @@ class TeamTalkServer:
 		self.current_id = 0
 		# Logging in sends a flood of "loggedin" and "addchannel" packets
 		# Make it so these events can be handled differently if necessary
-		if int(params["id"]) == 1:
+		if params["id"] == 1:
 			self.logging_in = False
 
 	@staticmethod
