@@ -219,6 +219,7 @@ class TeamTalkServer:
 			line = self.read_line(timeout)
 			if line == b"pong":
 				# response to ping, which is handled internally
+				# we don't actually care about getting something back, we just send them to make the server happy
 				line = b"" # drop it
 			try:
 				line = line.decode()
@@ -268,7 +269,8 @@ class TeamTalkServer:
 
 	def subscribe(self, event, func=None):
 		"""Starts calling func every time event is encountered, passing along a copy of this class as well as the parameters from the TT message
-		This can also be used as a decorator"""
+		This can also be used as a decorator
+		"""
 
 		def wrapper(_func):
 			evt = event.lower()
@@ -299,13 +301,14 @@ class TeamTalkServer:
 		self.subscribe("error", self._error)
 		self.subscribe("begin", self._begin)
 		self.subscribe("end", self._end)
+		self.subscribe("loggedin", self._loggedin)
 		self.subscribe("accepted", self._accepted)
 		self.subscribe("serverupdate", self._serverupdate)
 		self.subscribe("addchannel", self._addchannel)
-		self.subscribe("loggedin", self._loggedin)
 
-	def get_channel(self, id):
-		"""Returns a dict of info for channels with the requested id.
+	def get_channel(self, id, index=False):
+		"""Retrieves attributes for channels with the requested id.
+		If index is False, returns a dict. Otherwise, returns the channel's index in self.channels
 		If id is of type str, look for matching names
 		If id is an int, look for matching chanid's
 		If id is a dict, we assume params are lazily being passed and try searching for a chanid"""
@@ -313,14 +316,21 @@ class TeamTalkServer:
 			id = id.get("chanid")
 			if not id:
 				return
-		for channel in self.channels:
+		found = False
+		for index, channel in enumerate(self.channels):
 			if isinstance(id, int) and channel["chanid"] == id:
-				return channel
+				found = True
 			elif isinstance(id, str) and channel["channel"] == id:
-				return channel
+				found = True
+			if found:
+				if index:
+					return index
+				else:
+					return channel
 
-	def get_user(self, id):
-		"""Returns a dict of info for users with the requested id.
+	def get_user(self, id, index=False):
+		"""Retrieves attributes for users with the requested id.
+		If index is False, returns a dict. Otherwise, returns the user's index in self.users
 		If id is of type str, look for matching names
 			Be careful, though, as teamtalk imposes no limit on users with identical names.
 		If id is an int, look for matching userid's
@@ -330,15 +340,23 @@ class TeamTalkServer:
 			id = id.get("userid")
 			if not id:
 				return
-		for user in self.users:
+		found = False
+		for index, user in enumerate(self.users):
 			if isinstance(id, int) and user["userid"] == id:
-				return user
+				found = True
 			elif isinstance(id, str) and user["userid"] == id:
-				return user
+				found = True
+			if found:
+				if index:
+					return index
+				else:
+					return user
 
 	# Internal event responses
 	# We subscribe to these to ensure we have the latest info
 	# These take precedence over custom responses
+	# methods are static because instances of this class are sent along to every response already, adding self would
+	# be a redundancy
 
 	@staticmethod
 	def _error(self, params):
@@ -377,6 +395,18 @@ class TeamTalkServer:
 			self.logging_in = False
 
 	@staticmethod
+	def _loggedin(self, params):
+		"""Event fired when a user has just logged in.
+		Is also sent during login for every currently logged in user"""
+		user_index = self.get_user(params["userid"], index=True)
+		if not user_index:
+			self.users.append(params)
+		else:
+			# something was updated
+			# I don't think this should happen, but just to be sure
+			self.users[user_index].update(params)
+
+	@staticmethod
 	def _accepted(self, params):
 		"""Event fired immediately after an accepted login.
 		Contains information about the current user"""
@@ -392,14 +422,9 @@ class TeamTalkServer:
 	def _addchannel(self, params):
 		"""Event fired when a new channel has been created
 		Can also be used to tell a newly connected user about a channel"""
-		chan = self.get_channel(params["chanid"])
-		# something was updated
-		if chan:
-			self.channels.remove(chan)
-		self.channels.append(params)
-
-	@staticmethod
-	def _loggedin(self, params):
-		"""Event fired when a user has just logged in.
-		Is also sent during login for every currently logged in user"""
-		self.users.append(params)
+		chan_index = self.get_channel(params["chanid"], index=True)
+		if not chan_index:
+			self.channels.append(params)
+		else:
+			# shouldn't happen
+			self.channels[chan_index].update(params)
