@@ -298,18 +298,12 @@ class TeamTalkServer:
 			self.users, self.me, self.channels, self.server_params, etc.
 		Called automatically
 		"""
-		self.subscribe("error", self._error)
-		self.subscribe("begin", self._begin)
-		self.subscribe("end", self._end)
-		self.subscribe("loggedin", self._loggedin)
-		self.subscribe("loggedout", self.loggedout)
-		self.subscribe("accepted", self._accepted)
-		self.subscribe("serverupdate", self._serverupdate)
-		self.subscribe("addchannel", self._addchannel)
-		self.subscribe("updatechannel", self.updatechannel)
-		self.subscribe("removechannel", self.removechannel)
-		self.subscribe("adduser", self.adduser)
-		self.subscribe("removeuser", self.removeuser)
+		funcs = [i for i in dir(self) if i.startswith("_handle_")]
+		for func in funcs:
+			event = func.replace("_handle_", "")
+			func = getattr(self, func)
+			if callable(func):
+				self.subscribe(event, func)
 
 	def get_channel(self, id, index=False):
 		"""Retrieves attributes for channels with the requested id.
@@ -364,13 +358,13 @@ class TeamTalkServer:
 	# be a redundancy
 
 	@staticmethod
-	def _error(self, params):
+	def _handle_error(self, params):
 		"""Event fired when something goes wrong.
 		params["number"] contains the code, and params["message"] is a human-friendly explanation of what went wrong"""
 		print(f"error ({params['number']}): {params['message']}")
 
 	@staticmethod
-	def _begin(self, params):
+	def _handle_begin(self, params):
 		"""Event fired to acknowledge the start of an ordered response.
 		When a sent message contains the field "id=*", responses take the form:
 			begin id=*
@@ -385,7 +379,7 @@ class TeamTalkServer:
 			self.logging_in = True
 
 	@staticmethod
-	def _end(self, params):
+	def _handle_end(self, params):
 		"""Event fired to acknowledge the end of an ordered response.
 		When a sent message contains the field "id=*", responses take the form:
 			begin id=*
@@ -400,7 +394,7 @@ class TeamTalkServer:
 			self.logging_in = False
 
 	@staticmethod
-	def _loggedin(self, params):
+	def _handle_loggedin(self, params):
 		"""Event fired when a user has just logged in.
 		Is also sent during login for every currently logged in user"""
 		user_index = self.get_user(params["userid"], index=True)
@@ -412,26 +406,26 @@ class TeamTalkServer:
 			self.users[user_index].update(params)
 
 	@staticmethod
-	def loggedout(self, params):
+	def _handle_loggedout(self, params):
 		"""Event fired when a user logs out"""
 		user = self.get_user(params["userid"])
 		if user:
 			self.users.remove(user)
 
 	@staticmethod
-	def _accepted(self, params):
+	def _handle_accepted(self, params):
 		"""Event fired immediately after an accepted login.
 		Contains information about the current user"""
 		self.me.update(params)
 
 	@staticmethod
-	def _serverupdate(self, params):
+	def _handle_serverupdate(self, params):
 		"""Event fired after login that exposes more info to a client
 		May also mean that attributes of this server have changed"""
 		self.server_params.update(params)
 
 	@staticmethod
-	def _addchannel(self, params):
+	def _handle_addchannel(self, params):
 		"""Event fired when a new channel has been created
 		Can also be used to tell a newly connected user about a channel"""
 		chan_index = self.get_channel(params["chanid"], index=True)
@@ -442,21 +436,21 @@ class TeamTalkServer:
 			self.channels[chan_index].update(params)
 
 	@staticmethod
-	def updatechannel(self, params):
+	def _handle_updatechannel(self, params):
 		"""Event fired when an attribute of a channel has changed"""
 		chan_index = self.get_channel(params["chanid"], index=True)
 		if chan_index:
 			self.channels[chan_index].update(params)
 
 	@staticmethod
-	def removechannel(self, params):
+	def _handle_removechannel(self, params):
 		"""Event fired when a channel is deleted"""
 		channel = self.get_channel(params["chanid"])
 		if channel:
 			self.channels.remove(channel)
 
 	@staticmethod
-	def adduser(self, params):
+	def _handle_adduser(self, params):
 		"""Event fired when a user is added (manually joins or is moved) to a channel.
 		Can also be used to tell a newly connected user about the location of other users on the server"""
 		user_index = self.get_user(params["userid"], index=True)
@@ -466,7 +460,7 @@ class TeamTalkServer:
 			self.me.update(params)
 
 	@staticmethod
-	def removeuser(self, params):
+	def _handle_removeuser(self, params):
 		"""Event fired when a user is removed from (or leaves) a channel"""
 		user_index = self.get_user(params["userid"], index=True)
 		if user_index:
