@@ -302,9 +302,14 @@ class TeamTalkServer:
 		self.subscribe("begin", self._begin)
 		self.subscribe("end", self._end)
 		self.subscribe("loggedin", self._loggedin)
+		self.subscribe("loggedout", self.loggedout)
 		self.subscribe("accepted", self._accepted)
 		self.subscribe("serverupdate", self._serverupdate)
 		self.subscribe("addchannel", self._addchannel)
+		self.subscribe("updatechannel", self.updatechannel)
+		self.subscribe("removechannel", self.removechannel)
+		self.subscribe("adduser", self.adduser)
+		self.subscribe("removeuser", self.removeuser)
 
 	def get_channel(self, id, index=False):
 		"""Retrieves attributes for channels with the requested id.
@@ -317,22 +322,22 @@ class TeamTalkServer:
 			if not id:
 				return
 		found = False
-		for index, channel in enumerate(self.channels):
+		for i, channel in enumerate(self.channels):
 			if isinstance(id, int) and channel["chanid"] == id:
 				found = True
 			elif isinstance(id, str) and channel["channel"] == id:
 				found = True
 			if found:
 				if index:
-					return index
+					return i
 				else:
 					return channel
 
 	def get_user(self, id, index=False):
 		"""Retrieves attributes for users with the requested id.
 		If index is False, returns a dict. Otherwise, returns the user's index in self.users
-		If id is of type str, look for matching names
-			Be careful, though, as teamtalk imposes no limit on users with identical names.
+		If id is of type str, look for matching nicknames
+			Be careful, though, as teamtalk imposes no limit on users with identical nicknames.
 		If id is an int, look for matching userid's
 		If id is a dict, we assume params are lazily being passed and try searching for a userid
 		"""
@@ -341,14 +346,14 @@ class TeamTalkServer:
 			if not id:
 				return
 		found = False
-		for index, user in enumerate(self.users):
+		for i, user in enumerate(self.users):
 			if isinstance(id, int) and user["userid"] == id:
 				found = True
-			elif isinstance(id, str) and user["userid"] == id:
+			elif isinstance(id, str) and user["nickname"] == id:
 				found = True
 			if found:
 				if index:
-					return index
+					return i
 				else:
 					return user
 
@@ -407,6 +412,13 @@ class TeamTalkServer:
 			self.users[user_index].update(params)
 
 	@staticmethod
+	def loggedout(self, params):
+		"""Event fired when a user logs out"""
+		user = self.get_user(params["userid"])
+		if user:
+			self.users.remove(user)
+
+	@staticmethod
 	def _accepted(self, params):
 		"""Event fired immediately after an accepted login.
 		Contains information about the current user"""
@@ -428,3 +440,36 @@ class TeamTalkServer:
 		else:
 			# shouldn't happen
 			self.channels[chan_index].update(params)
+
+	@staticmethod
+	def updatechannel(self, params):
+		"""Event fired when an attribute of a channel has changed"""
+		chan_index = self.get_channel(params["chanid"], index=True)
+		if chan_index:
+			self.channels[chan_index].update(params)
+
+	@staticmethod
+	def removechannel(self, params):
+		"""Event fired when a channel is deleted"""
+		channel = self.get_channel(params["chanid"])
+		if channel:
+			self.channels.remove(channel)
+
+	@staticmethod
+	def adduser(self, params):
+		"""Event fired when a user is added (manually joins or is moved) to a channel.
+		Can also be used to tell a newly connected user about the location of other users on the server"""
+		user_index = self.get_user(params["userid"], index=True)
+		if user_index:
+			self.users[user_index].update(params)
+		if params["userid"] == self.me["userid"]:
+			self.me.update(params)
+
+	@staticmethod
+	def removeuser(self, params):
+		"""Event fired when a user is removed from (or leaves) a channel"""
+		user_index = self.get_user(params["userid"], index=True)
+		if user_index:
+			self.users[user_index]["chanid"] = 0
+		if params["userid"] == self.me["userid"]:
+			self.me["chanid"] = 0
