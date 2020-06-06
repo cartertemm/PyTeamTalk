@@ -244,9 +244,9 @@ class TeamTalkServer:
 
 	def _sleep(self, seconds):
 		"""Like time.sleep, but immediately halts execution if we need to disconnect from a server"""
-		t = time.time()
-		while not self.disconnecting and not time.time() - t >= seconds:
-			pass
+		starttime = time.time()
+		while not self.disconnecting and time.time() - starttime <= seconds:
+			time.sleep(0.005)
 
 	def handle_pings(self):
 		"""Handles pinging the server at a reasonable interval.
