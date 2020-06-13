@@ -378,7 +378,7 @@ class TeamTalkServer:
 		If index is False, returns a dict. Otherwise, returns the user's index in self.users
 		If id is of type str, look for matching nicknames
 			Be careful, though, as teamtalk imposes no limit on users with identical nicknames.
-		If id is an int, look for matching userid's
+		If id is an int, look for matching userids
 		If id is a dict, we assume params are lazily being passed and try searching for a userid
 		"""
 		if isinstance(id, dict):
@@ -396,6 +396,87 @@ class TeamTalkServer:
 					return i
 				else:
 					return user
+
+	def get_users_in_channel(self, id=None):
+		"""Retrieves a list of users in the specified channel.
+		id can be anything accepted by get_channel
+		There is one exception, however. If None, looks for users that aren't said to be in any channel"""
+		users = []
+		if id:
+			channel = self.get_channel(id)
+			id = channel.get("chanid")
+		for user in self.users:
+			if user.get("chanid") == id:
+				users.append(user)
+		return users
+
+	def get_role(self, user=None):
+		"""Returns an str representing the provided user's role.
+		User can be anything accepted by get_channel
+			If None, returns our role instead
+		Possible values are "default", "admin" and "none"
+		"""
+		if user:
+			user = self.get_user(user)
+			usertype = user.get("usertype")
+		else:
+			usertype = self.me.get("usertype")
+		if usertype == USERTYPE_DEFAULT:
+			return "default"
+		elif usertype == USERTYPE_ADMIN:
+			return "admin"
+		else:
+			return "none"
+
+	# helpers for common actions
+
+	def join(self, channel, password="", id=None):
+		"""Joins the specified channel, optionally with a password.
+		channel can be anything accepted by get_channel
+		An "error" event is thrown on failure, "joined" on success"""
+		params = {"chanid": channel, "password": password}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("join", params)
+		self.send(msg)
+
+	def user_message(self, to, content, id=None):
+		"""Sends a private message to a user on this server.
+		To is the recipient, and can be anything accepted by get_user
+		Content is the text that will be sent"""
+		to = self.get_user(to)
+		to = to.get("userid")
+		params = {"type": USER_MSG, "content": content, "destuserid": to}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("message", params)
+		self.send(msg)
+
+	def channel_message(self, content, to=None, id=None):
+		"""Sends a channel message.
+		Content is the text that will be sent
+		To can be None (current channel) or anything accepted by get_channel
+			Note that only admins are able to send messages to channels without joining first.
+		"""
+		if to:
+			to = self.get_user(to)
+			to = to.get("userid")
+		else:
+			to = self.me.get("chanid")
+		params = {"type": CHANNEL_MSG, "content": content, "chanid": to}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("message", params)
+		self.send(msg)
+
+	def broadcast_message(self, content, id=None):
+		"""Sends a broadcast (serverwide) message
+		Content is the text that will be sent"""
+		params = {"type": BROADCAST_MSG, "content": content}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("message", params)
+		self.send(msg)
 
 	# Internal event responses
 	# We subscribe to these to ensure we have the latest info
@@ -496,20 +577,26 @@ class TeamTalkServer:
 			self.channels.remove(channel)
 
 	@staticmethod
+	def _handle_joined(self, params):
+		"""Event fired when this user joins a channel"""
+		self.me.update(params)
+
+	@staticmethod
+	def _handle_left(self, params):
+		"""Event fired when this user leaves a channel"""
+		del self.me["chanid"]
+
+	@staticmethod
 	def _handle_adduser(self, params):
 		"""Event fired when a user is added (manually joins or is moved) to a channel.
 		Can also be used to tell a newly connected user about the location of other users on the server"""
 		user_index = self.get_user(params["userid"], index=True)
-		if user_index:
+		if user_index != None:
 			self.users[user_index].update(params)
-		if params["userid"] == self.me["userid"]:
-			self.me.update(params)
 
 	@staticmethod
 	def _handle_removeuser(self, params):
 		"""Event fired when a user is removed from (or leaves) a channel"""
 		user_index = self.get_user(params["userid"], index=True)
-		if user_index:
+		if user_index != None:
 			self.users[user_index]["chanid"] = 0
-		if params["userid"] == self.me["userid"]:
-			self.me["chanid"] = 0

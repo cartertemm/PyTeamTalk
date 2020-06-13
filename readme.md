@@ -46,6 +46,5 @@ The following still needs to be done
 * Handle subscription changes
 * Support sending and receiving files
 * Support encrypted servers
-* Add functions for server commands
 * Support servers where users are unable to see other users
 * Add to pip
