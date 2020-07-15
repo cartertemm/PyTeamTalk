@@ -184,6 +184,7 @@ class TeamTalkServer:
 		self.message_thread = None
 		self.disconnecting = False
 		self.logging_in = False
+		self.logged_out = False
 		self.current_id = 0
 		self.last_id = 0
 		self.subscriptions = {}
@@ -412,7 +413,7 @@ class TeamTalkServer:
 
 	def get_role(self, user=None):
 		"""Returns an str representing the provided user's role.
-		User can be anything accepted by get_channel
+		User can be anything accepted by get_user
 			If None, returns our role instead
 		Possible values are "default", "admin" and "none"
 		"""
@@ -440,6 +441,39 @@ class TeamTalkServer:
 		msg = build_tt_message("join", params)
 		self.send(msg)
 
+	def leave(self, id=None):
+		"""Leaves the current channel.
+		An "error" event is thrown on failure, "left" on success"""
+		params = {}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("leave", params)
+		self.send(msg)
+
+	def kick(self, target, channel=None, id=None):
+		"""Kicks the provided user from a channel (if specified) otherwise the server.
+		Target can be anything accepted by get_user
+		Channel can be anything accepted by get_channel"""
+		target = self.get_user(target)
+		target = target.get("userid")
+		params = {"userid": target}
+		if channel:
+			channel = self.get_channel(channel)
+			channel = channel.get("chanid")
+			params["chanid"] = channel
+		if id:
+			params["id"] = id
+		msg = build_tt_message("kick", params)
+		self.send(msg)
+
+	def change_nickname(self, nickname, id=None):
+		"""Changes the nickname for the current user."""
+		params = {"nickname": nickname}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("changenick", params)
+		self.send(msg)
+
 	def user_message(self, to, content, id=None):
 		"""Sends a private message to a user on this server.
 		To is the recipient, and can be anything accepted by get_user
@@ -459,8 +493,8 @@ class TeamTalkServer:
 			Note that only admins are able to send messages to channels without joining first.
 		"""
 		if to:
-			to = self.get_user(to)
-			to = to.get("userid")
+			to = self.get_channel(to)
+			to = to.get("chanid")
 		else:
 			to = self.me.get("chanid")
 		params = {"type": CHANNEL_MSG, "content": content, "chanid": to}
@@ -470,7 +504,7 @@ class TeamTalkServer:
 		self.send(msg)
 
 	def broadcast_message(self, content, id=None):
-		"""Sends a broadcast (serverwide) message
+		"""Sends a broadcast (serverwide) message.
 		Content is the text that will be sent"""
 		params = {"type": BROADCAST_MSG, "content": content}
 		if id:
@@ -535,15 +569,20 @@ class TeamTalkServer:
 	@staticmethod
 	def _handle_loggedout(self, params):
 		"""Event fired when a user logs out"""
-		user = self.get_user(params["userid"])
-		if user:
-			self.users.remove(user)
+		if not params.get("userid") or params["userid"] == self.me["userid"]:
+			self.logged_out = True
+			self.disconnect()
+		else:
+			user = self.get_user(params["userid"])
+			if user:
+				self.users.remove(user)
 
 	@staticmethod
 	def _handle_accepted(self, params):
 		"""Event fired immediately after an accepted login.
 		Contains information about the current user"""
 		self.me.update(params)
+		self.logged_out = False
 
 	@staticmethod
 	def _handle_serverupdate(self, params):
@@ -599,4 +638,4 @@ class TeamTalkServer:
 		"""Event fired when a user is removed from (or leaves) a channel"""
 		user_index = self.get_user(params["userid"], index=True)
 		if user_index != None:
-			self.users[user_index]["chanid"] = 0
+			del self.users[user_index]["chanid"]
