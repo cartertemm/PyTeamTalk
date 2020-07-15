@@ -255,7 +255,7 @@ class TeamTalkServer:
 		self.disconnecting = True
 		self.con.close()
 
-	def handle_messages(self, timeout=None, callback=None):
+	def handle_messages(self, timeout=1, callback=None):
 		"""Processes all incoming messages
 		If callback is specified, it will be ran every time a new line is received from the server (or timeout seconds) along with an instance of this class, the event name, and parameters.
 		Please note: If timeout is None (or unspecified), the callback function may take a while to execute in instances when we aren't getting packets. This behavior may not be desireable for many applications.
@@ -653,3 +653,10 @@ class TeamTalkServer:
 		user_index = self.get_user(params["userid"], index=True)
 		if user_index != None:
 			del self.users[user_index]["chanid"]
+
+	@staticmethod
+	def handle_updateuser(self, params):
+		"""Event fired when an attribute of a user has changed"""
+		user_index = self.get_user(params["userid"], index=True)
+		if user_index != None:
+			self.users[user_index].update(params)
