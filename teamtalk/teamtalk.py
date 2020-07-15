@@ -466,6 +466,20 @@ class TeamTalkServer:
 		msg = build_tt_message("kick", params)
 		self.send(msg)
 
+	def move(self, user, destination, id=None):
+		"""Moves the provided user to destination.
+		User can be anything accepted by get_user
+		Destination can be anything accepted by get_channel"""
+		user = self.get_user(user)
+		user = user.get("userid")
+		channel = self.get_channel(destination)
+		channel = channel.get("chanid")
+		params = {"userid": user, "chanid": channel}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("moveuser", params)
+		self.send(msg)
+
 	def change_nickname(self, nickname, id=None):
 		"""Changes the nickname for the current user."""
 		params = {"nickname": nickname}
