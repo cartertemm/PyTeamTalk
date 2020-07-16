@@ -111,19 +111,45 @@ USERRIGHT_ALL = 0x0013FFFF
 USERRIGHT_KNOWN_MASK = 0x001FFFFF
 
 
+def split_parts(msg):
+	"""Splits a key=value pair into a tuple."""
+	index = msg.find("=")
+	return (msg[:index], msg[index+1:])
+
+
+def split_quoted(message):
+	"""Like shlex.split, but preserves quotes."""
+	pos = -1
+	inquote = False
+	buffer = ""
+	final = []
+	while pos < len(message)-1:
+		pos += 1
+		token = message[pos]
+		if token == " " and not inquote:
+			final.append(buffer)
+			buffer = ""
+			continue
+		if token == "\"" and message[pos-1] != "\\":
+			inquote = not inquote
+		buffer += token
+	final.append(buffer)
+	return final
+
+
 def parse_tt_message(message):
 	"""Parses a message sent by Teamtalk.
 	Also preserves datatypes.
 	Returns a tuple of (event, parameters)"""
 	params = {}
 	message = message.strip()
-	message = shlex.split(message)
+	message = split_quoted(message)
 	event = message[0]
 	message.remove(event)
 	for item in message:
-		k, v = item.split("=")
+		k, v = split_parts(item)
 		# Lists take the form [x,y,z]
-		if "[" in v and "]" in v:
+		if v.startswith("[") and v.endswith("]"):
 			v = v.strip("[]")
 			# Make sure we aren't dealing with a blank list
 			if v:
@@ -142,6 +168,9 @@ def parse_tt_message(message):
 		# preserve ints
 		elif v.isdigit():
 			v = int(v)
+		# strings
+		elif v.startswith('"') and v.endswith('"'):
+			v = v[1:-1]
 		params[k] = v
 	return event, params
 
