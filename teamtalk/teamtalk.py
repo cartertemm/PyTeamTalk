@@ -222,6 +222,7 @@ class TeamTalkServer:
 		self.me = {}
 		self.server_params = {}
 		self._subscribe_to_internal_events()
+		self._login_sequence = 0
 
 	def connect(self):
 		"""Initiates the connection to this server
@@ -241,7 +242,8 @@ class TeamTalkServer:
 
 	def login(self, nickname, username, password, client, protocol="5.6", version="1.0"):
 		"""Attempts to log in to the server.
-		This should be called immediately after connect to prevent timing out"""
+		This should be called immediately after connect to prevent timing out.
+		Blocks until the login sequence has completed."""
 		message = build_tt_message(
 			"login",
 			{
@@ -256,6 +258,8 @@ class TeamTalkServer:
 		)
 		self.send(message)
 		self.start_threads()
+		self._login_sequence = 1
+		self.handle_messages()
 
 	def start_threads(self):
 		self.pinger_thread = threading.Thread(target=self.handle_pings)
@@ -292,6 +296,9 @@ class TeamTalkServer:
 			Also be wary of extremely small timeouts when handling larger lines
 		"""
 		while not self.disconnecting:
+			if self._login_sequence == 2:
+				self._login_sequence = 0
+				break
 			line = self.read_line(timeout)
 			if line == b"pong":
 				# response to ping, which is handled internally
@@ -464,7 +471,9 @@ class TeamTalkServer:
 		"""Joins the specified channel, optionally with a password.
 		channel can be anything accepted by get_channel
 		An "error" event is thrown on failure, "joined" on success"""
-		params = {"chanid": channel, "password": password}
+		channel = self.get_channel(channel)
+		chanid = channel["chanid"]
+		params = {"chanid": chanid, "password": password}
 		if id:
 			params["id"] = id
 		msg = build_tt_message("join", params)
@@ -596,6 +605,7 @@ class TeamTalkServer:
 		# Make it so these events can be handled differently if necessary
 		if params["id"] == 1:
 			self.logging_in = False
+			self._login_sequence = 2
 
 	@staticmethod
 	def _handle_loggedin(self, params):
