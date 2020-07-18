@@ -221,6 +221,7 @@ class TeamTalkServer:
 		self.users = []
 		self.me = {}
 		self.server_params = {}
+		self.files = []
 		self._subscribe_to_internal_events()
 		self._login_sequence = 0
 
@@ -433,6 +434,34 @@ class TeamTalkServer:
 					return i
 				else:
 					return user
+
+	def get_file(self, id, channel=None, index=False):
+		"""Retrieves attributes for files with the requested id.
+		If channel is given, limit the search to only files in the specified channel, can be anything accepted by get_channel
+		If index is False, returns a dict. Otherwise, returns the file's index in self.files
+		If id is of type str, look for matching filenames
+			Be careful, though, as teamtalk imposes no limit on files with the same name in different channels.
+		If id is an int, look for matching fileids
+		If id is a dict, we assume params are lazily being passed and try searching for a fileid"""
+		if isinstance(id, dict):
+			id = id.get("fileid")
+			if not id:
+				return
+		channel = self.get_channel(channel)
+		channel = channel.get("chanid")
+		found = False
+		for i, file in enumerate(self.files):
+			if isinstance(id, int) and file["fileid"] == id:
+				if channel and file["chanid"] == channel:
+					found = True
+			elif isinstance(id, str) and file["filename"] == id:
+				if channel and file["chanid"] == channel:
+					found = True
+			if found:
+				if index:
+					return i
+				else:
+					return file
 
 	def get_users_in_channel(self, id=None):
 		"""Retrieves a list of users in the specified channel.
@@ -694,8 +723,21 @@ class TeamTalkServer:
 			del self.users[user_index]["chanid"]
 
 	@staticmethod
-	def handle_updateuser(self, params):
+	def _handle_updateuser(self, params):
 		"""Event fired when an attribute of a user has changed"""
 		user_index = self.get_user(params["userid"], index=True)
 		if user_index != None:
 			self.users[user_index].update(params)
+
+	@staticmethod
+	def _handle_addfile(self, params):
+		"""Event fired after a user joins a channel where files are available.
+		Sent for every downloadable file."""
+		self.files.append(params)
+
+	@staticmethod
+	def _handle_removefile(self, params):
+		"""Event fired when a file is removed from a channel."""
+		file_index = self.get_file(params["filename"], params["chanid"], index=True)
+		if file_index != None:
+			del self.files[file_index]
