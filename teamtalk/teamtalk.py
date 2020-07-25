@@ -279,6 +279,7 @@ class TeamTalkServer:
 			return False
 		if isinstance(line, str):
 			line = line.encode()
+		line = line.replace(b"\n", b"\r")
 		if not line.endswith(b"\r\n"):
 			line += b"\r\n"
 		self.con.write(line)
