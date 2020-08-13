@@ -2,8 +2,14 @@
 numbers.py
 
 TeamTalk bot that retrieves facts from the Numbers API.
-It lacks some more advanced features that one would expect from this sort of thing e.g. rate limiting and threading, but should serve as a basic example.
-"""
+It lacks some more advanced features that one would expect from this sort of
+thing e.g. rate limiting and threading, but should serve as a basic example
+upon which something better could be built."""
+
+# A part of PyTeamTalk
+# author: Carter Temm
+# License: MIT
+
 
 import requests
 import teamtalk
@@ -60,7 +66,7 @@ def help():
 	return """Valid keywords: trivia, math, date or year vollowed by a number\rNumbers can be integers (duh), dates (month/day), or random for anything. if none is provided, random is assumed."""
 
 
-t = teamtalk.TeamTalkServer("example.com", 10333)
+t = teamtalk.TeamTalkServer()
 
 
 @t.subscribe("messagedeliver")
@@ -82,6 +88,8 @@ def message(server, params):
 		server.user_message(source, func(*content[1:]))
 
 
-t.connect()
-t.login("number bot", "admin", "password", "TeamTalkBotClient")
-t.handle_messages(1)
+if __name__ == "__main__":
+	t.set_connection_info("example.com", 10333)
+	t.connect()
+	t.login("number bot", "admin", "password", "TeamTalkBotClient")
+	t.handle_messages(1)

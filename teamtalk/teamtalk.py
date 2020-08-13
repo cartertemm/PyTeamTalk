@@ -205,9 +205,8 @@ def build_tt_message(event, params):
 class TeamTalkServer:
 	"""Represents a single TeamTalk server."""
 
-	def __init__(self, host, tcpport=10333):
-		self.host = host
-		self.tcpport = tcpport
+	def __init__(self, host=None, tcpport=10333):
+		self.set_connection_info(host, tcpport)
 		self.con = None
 		self.pinger_thread = None
 		self.message_thread = None
@@ -224,6 +223,12 @@ class TeamTalkServer:
 		self.files = []
 		self._subscribe_to_internal_events()
 		self._login_sequence = 0
+
+
+	def set_connection_info(self, host, tcpport=10333):
+		"""Sets the server's host and TCP port"""
+		self.host = host
+		self.tcpport = tcpport
 
 	def connect(self):
 		"""Initiates the connection to this server
