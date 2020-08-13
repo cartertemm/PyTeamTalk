@@ -15,10 +15,10 @@ Finally, change the host, port and login information to match you or your friend
 To automatically join a channel on login, add
 t.join(channel)
 below the call to t.login. For example
-t.join("/Stereo/")
+t.join("/Stereo/")"""
 
-Every parameter enclosed in "[]" is optional.
-play [uri]: Starts playback. If uri is provided, starts playing from the specified spotify link, can start with "http://" or "spotify:".
+help = """Every parameter enclosed in brackets ([]) is optional
+play [uri]: Starts playback. If uri is provided, starts playing from the specified spotify link, can start with http:// or spotify:.
 pause: Pauses playback.
 previous/next: Cycles between tracks.
 volume percentage: Sets the output volume (between 0 and 100).
@@ -26,18 +26,26 @@ track query: Searches for and plays a track.
 artist query: Searches for and plays tracks by an artist.
 playlist query: Searches for and plays tracks from a playlist.
 shuffle yes/on/1|no/off/0: Enables or disables shuffling.
-playing: Displays info about the currently playing track."""
+playing: Displays info about the currently playing track.
+If on mac OS, send the word mac to the channel to receive a PM"""
 
 
 # constants
+host = "example.com"
+port = 10333
+nickname = "Spotify Bot"
+username = "admin"
+password = "password"
+client_name = "TeamTalkBotClient"
+# users disallowed from sending commands as a means of abuse prevention
+banned_users = []
+
+## authentication
 client_id = ""
 client_secret = ""
-
 redirect_uri = "http://localhost:9999"
 scopes = "user-modify-playback-state user-read-currently-playing user-read-playback-state user-read-private"
 cache_path = "spotify.cache"
-# users disallowed from sending commands as a means of abuse prevention
-banned_users = []
 
 
 import datetime
@@ -47,7 +55,7 @@ import teamtalk
 from spotipy.oauth2 import SpotifyOAuth
 
 # Globals
-t = teamtalk.TeamTalkServer(host, 10333)
+t = teamtalk.TeamTalkServer()
 
 
 # Utility functions
@@ -150,10 +158,6 @@ class SpotifyBot:
 		return f"{artists} - {name} ({elapsed} - {duration})"
 
 	@preserve_tracebacks
-	def command_help(self, val=None):
-		return "Due to TeamTalk message size constraints, help is now stored at:\nhttps://pastebin.com/raw/bQDpVS6x"
-
-	@preserve_tracebacks
 	def command_play(self, val=None):
 		if val:
 			# start_playback doesn't support passing tracks by context_uri for some dumb reason
@@ -184,6 +188,7 @@ class SpotifyBot:
 			return (
 				str(self.spotify.current_playback()["device"]["volume_percent"]) + "%"
 			)
+		val = val.replace("%", "")
 		if not val.isdigit():
 			return "percentage argument must be a digit"
 		val = int(val)
@@ -247,25 +252,35 @@ class SpotifyBot:
 
 @t.subscribe("messagedeliver")
 def message(server, params):
-	if params["type"] != teamtalk.USER_MSG:
-		return
 	content = params["content"]
 	user = server.get_user(params["srcuserid"])
 	nickname = user["nickname"]
 	username = user["username"]
+	if params["type"] == teamtalk.CHANNEL_MSG:
+		if content.lower().strip() == "mac":
+			server.user_message(user, "Ok. Type help for a list of commands.")
+	if params["type"] != teamtalk.USER_MSG:
+		return  # nothing to do
 	if username in banned_users:
 		server.user_message(
 			user, "You do not currently have permission to use this bot"
 		)
 		return
 	parsed = str(content).split(" ")
-	func = getattr(sp, "command_" + parsed[0], None)
+	# our command parsing assumes a single message needs to be sent
+	# due to TeamTalk message size constraints, we need to split these up
+	if parsed[0].lower()=="help":
+		for line in help.splitlines():
+			# spam
+			server.user_message(user, line)
+		return
+	func = getattr(sp, "command_" + parsed[0].lower(), None)
 	if callable(func):
 		res = func(" ".join(parsed[1:]))
 		if res:
 			server.user_message(user, res)
 	else:
-		server.user_message(user, "unrecognized command")
+		server.user_message(user, "unrecognized command, type help for options")
 
 
 if __name__ == "__main__":
@@ -273,8 +288,9 @@ if __name__ == "__main__":
 	sp.init_spotify()
 	sp.select_device()
 	print("Connecting to server...")
+	t.set_connection_info(host, port)
 	t.connect()
-	t.login("Spotify Bot", "admin", "password", "TeamTalkBotClient")
+	t.login(nickname, username, password, client_name)
 	print("login success")
 	t.join(2)
 	t.handle_messages(1)
