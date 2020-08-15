@@ -6,11 +6,6 @@ Also requires another TeamTalk instance capable of routing system audio. The
 process for doing so is out of the scope of these notes. It is my hope that 
 this will someday be unnecessary, however.
 
-You will need to generate a Spotify app over at:
-http://developer.spotify.com/
-Once that's done, supply the given values for client_id and client_secret below.
-Also make sure you add a callback, set to the value of redirect_url for
-authentication.
 Finally, change the host, port and login information to match you or your friends' server.
 To automatically join a channel on login, add
 t.join(channel)
@@ -41,8 +36,8 @@ client_name = "TeamTalkBotClient"
 banned_users = []
 
 ## authentication
-client_id = ""
-client_secret = ""
+client_id = "52569438780b4497bdd72a09954d1030"
+client_secret = "f090e040c95842e3a31f26d86bf627a8"
 redirect_uri = "http://localhost:9999"
 scopes = "user-modify-playback-state user-read-currently-playing user-read-playback-state user-read-private"
 cache_path = "spotify.cache"
