@@ -63,7 +63,7 @@ def year(number=None):
 
 
 def help():
-	return """Valid keywords: trivia, math, date or year vollowed by a number\rNumbers can be integers (duh), dates (month/day), or random for anything. if none is provided, random is assumed."""
+	return """Valid keywords: trivia, math, date or year followed by a number\rNumbers can be integers (duh), dates (month/day), or random for anything. if none is provided, random is assumed."""
 
 
 t = teamtalk.TeamTalkServer()
