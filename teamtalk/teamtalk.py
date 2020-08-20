@@ -246,10 +246,13 @@ class TeamTalkServer:
 			return
 		self.server_params = params
 
-	def login(self, nickname, username, password, client, protocol="5.6", version="1.0"):
+	def login(self, nickname, username, password, client, protocol="5.6", version="1.0", callback=None):
 		"""Attempts to log in to the server.
 		This should be called immediately after connect to prevent timing out.
-		Blocks until the login sequence has completed."""
+		Blocks until the login sequence has completed.
+		If callback is specified, it behaves the same as handle_messages for the duration of this sequence.
+		To intersept failed logins, provide a callback and check for the "error" event.
+		"""
 		message = build_tt_message(
 			"login",
 			{
@@ -265,7 +268,7 @@ class TeamTalkServer:
 		self.send(message)
 		self.start_threads()
 		self._login_sequence = 1
-		self.handle_messages()
+		self.handle_messages(callback=callback)
 
 	def start_threads(self):
 		self.pinger_thread = threading.Thread(target=self.handle_pings)
@@ -307,6 +310,7 @@ class TeamTalkServer:
 				self._login_sequence = 0
 				break
 			line = self.read_line(timeout)
+			line = line.strip()
 			if line == b"pong":
 				# response to ping, which is handled internally
 				# we don't actually care about getting something back, we just send them to make the server happy

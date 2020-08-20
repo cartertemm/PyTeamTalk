@@ -73,9 +73,6 @@ def wait_for_info(section, server):
 	username = get(section, "username", "")
 	password = get(section, "password", "")
 	nickname = get(section, "nickname", "")
-	server.connect()
-	server.login(nickname, username, password, client_name)
-
 	def cb(server, event, params):
 		if server.users and server.channels and not server.logging_in:
 			# we have what we need
@@ -86,7 +83,9 @@ def wait_for_info(section, server):
 			self.disconnect()
 			return
 
-	server.handle_messages(0.5, cb)
+	server.connect()
+	server.login(nickname, username, password, client_name, callback=cb)
+	server.handle_messages(timeout=0.5, callback=cb)
 
 
 def summarize_server(section, server):
