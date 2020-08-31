@@ -110,6 +110,35 @@ USERRIGHT_DEFAULT = (
 USERRIGHT_ALL = 0x0013FFFF
 USERRIGHT_KNOWN_MASK = 0x001FFFFF
 
+## Server Subscriptions (from library/teamTalkLib/teamtalk/common.h)
+SUBSCRIBE_NONE  = 0x00000000
+SUBSCRIBE_USER_MSG	  = 0x00000001
+SUBSCRIBE_CHANNEL_MSG   = 0x00000002
+SUBSCRIBE_BROADCAST_MSG = 0x00000004
+SUBSCRIBE_CUSTOM_MSG = 0x00000008
+SUBSCRIBE_VOICE = 0x00000010
+SUBSCRIBE_VIDEOCAPTURE = 0x00000020
+SUBSCRIBE_DESKTOP = 0x00000040
+SUBSCRIBE_DESKTOPINPUT = 0x00000080
+SUBSCRIBE_MEDIAFILE = 0x00000100
+SUBSCRIBE_ALL = 0x000001FF
+SUBSCRIBE_LOCAL_DEFAULT = (SUBSCRIBE_USER_MSG |
+	SUBSCRIBE_CHANNEL_MSG |
+	SUBSCRIBE_BROADCAST_MSG |
+	SUBSCRIBE_CUSTOM_MSG |
+	SUBSCRIBE_MEDIAFILE)
+SUBSCRIBE_PEER_DEFAULT = (SUBSCRIBE_ALL & ~SUBSCRIBE_DESKTOPINPUT)
+SUBSCRIBE_INTERCEPT_USER_MSG = 0x00010000
+SUBSCRIBE_INTERCEPT_CHANNEL_MSG = 0x00020000
+# SUBSCRIBE_INTERCEPT_BROADCAST_MSG	 = 0x00040000
+SUBSCRIBE_INTERCEPT_CUSTOM_MSG  = 0x00080000
+SUBSCRIBE_INTERCEPT_VOICE	   = 0x00100000
+SUBSCRIBE_INTERCEPT_VIDEOCAPTURE= 0x00200000
+SUBSCRIBE_INTERCEPT_DESKTOP	 = 0x00400000
+# SUBSCRIBE_INTERCEPT_DESKTOPINPUT	  = 0x00800000
+SUBSCRIBE_INTERCEPT_MEDIAFILE = 0x01000000
+SUBSCRIBE_INTERCEPT_ALL = 0x017B0000
+
 
 def split_parts(msg):
 	"""Splits a key=value pair into a tuple."""
@@ -602,6 +631,67 @@ class TeamTalkServer:
 			params["id"] = id
 		msg = build_tt_message("message", params)
 		self.send(msg)
+
+	def remove_channel(self, channel, id=None):
+		"""Removes a channel from the server, only available to admins.
+		channel can be anything accepted by get_channel"""
+		channel = self.get_channel(channel)
+		chanid = channel.get("chanid")
+		params = {"chanid": chanid}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("removechannel", params)
+		self.send(msg)
+
+	def channel_operator(self, user=None, channel=None, password="", op=True, id=None):
+		"""Grants operator privileges on the provided channel.
+		user can be None (current user) or anything accepted by get_user
+		password is the operator password
+		channel can be None (current channel) or anything accepted by get_channel
+		if op is False, permission is revoked"""
+		op = int(op)
+		if channel:
+			channel = self.get_channel(channel)
+			channel = channel.get("chanid")
+		else:
+			channel = self.me.get("chanid")
+		if user:
+			user = self.get_user(user)
+			user = user.get("userid")
+		else:
+			user = self.me.get("userid")
+		params = {"chanid": channel, "userid": user, "opstatus": op}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("op", params)
+		self.send(msg)
+
+	def subscribe_to(self, user, subscription, id=None):
+		"""Subscribe to an event on this server for a given user.
+			Not to be confused with subscribe, which maps events to local functions.
+		user can be anything accepted by get_user
+		subscription can be any teamtalk.SUBSCRIBE_* constant, or a bitmask for multiple"""
+		user = self.get_user(user)
+		user = user.get("userid")
+		params = {"userid": user, "sublocal": subscription}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("subscribe", params)
+		self.send(msg)
+
+	def unsubscribe_from(self, user, subscription, id=None):
+		"""Unsubscribes from an event on this server for a given user.
+			Not to be confused with subscribe, which maps events to local functions.
+		user can be anything accepted by get_user
+		subscription can be any teamtalk.SUBSCRIBE_* constant, or a bitmask for multiple"""
+		user = self.get_user(user)
+		user = user.get("userid")
+		params = {"userid": user, "sublocal": subscription}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("unsubscribe", params)
+		self.send(msg)
+
 
 	# Internal event responses
 	# We subscribe to these to ensure we have the latest info
