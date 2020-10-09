@@ -586,6 +586,20 @@ class TeamTalkServer:
 		msg = build_tt_message("moveuser", params)
 		self.send(msg)
 
+	def change_status(self, statusmode, statusmsg, id=None):
+		"""
+		Changes the status for the current user
+		status modes are as follows:
+		0 Online
+		1 Away
+		2 Question
+		"""
+		params = {"statusmode": statusmode, "statusmsg" : statusmsg}
+		if id:
+			params["id"] = id
+		msg = build_tt_message("changestatus", params)
+		self.send(msg)
+
 	def change_nickname(self, nickname, id=None):
 		"""Changes the nickname for the current user."""
 		params = {"nickname": nickname}
