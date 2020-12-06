@@ -30,6 +30,8 @@ USERTYPE_DEFAULT      = 0x01
 USERTYPE_ADMIN	= 0x02
 
 ## Command Errors
+
+CMD_ERR_IGNORE = -1
 CMD_ERR_SUCCESS = 0  #indicates success
 CMD_ERR_SYNTAX_ERROR = 1000
 CMD_ERR_UNKNOWN_COMMAND = 1001
@@ -231,6 +233,16 @@ def build_tt_message(event, params):
 	return message
 
 
+class TeamTalkError(Exception):
+	"""Raised on an error event from the server"""
+	def __init__(self, code, message):
+		self.code = code
+		self.message = message
+
+	def __str__(self):
+		return "[" + self.code + "]: " + self.message
+
+
 class TeamTalkServer:
 	"""Represents a single TeamTalk server."""
 
@@ -357,6 +369,11 @@ class TeamTalkServer:
 				continue # nothing to do
 			event, params = parse_tt_message(line)
 			event = event.lower()
+			if event == "error":
+				# indicates success or irrelevance
+				if params["number"] == CMD_ERR_IGNORE or params["number"] == CMD_ERR_SUCCESS:
+					continue
+				raise TeamTalkError(params["number"], params["message"])
 			# Call messages for the event if necessary
 			for func in self.subscriptions.get(event, []):
 				func(self, params)
