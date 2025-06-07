@@ -23,4 +23,5 @@ setup(
 		"Development Status :: 3 - Alpha",
 	],
 	python_requires=">=3",
+	install_requires=["telnetlib-313-and-up; python_version>='3.13'"]
 )
