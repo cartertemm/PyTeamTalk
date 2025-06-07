@@ -24,9 +24,11 @@ spec = """# TT server listener configuration
 # [server_name]
 # host = example.com
 # tcpport = 10333
+# udpport = 10333
 # nickname = me
 # username = admin
 # password = password
+# encrypted = False
 """
 
 config = None
@@ -119,7 +121,9 @@ def main():
 	for section in config.sections():
 		host = get(section, "host")
 		tcpport = get(section, "tcpport")
-		server = teamtalk.TeamTalkServer(host, tcpport)
+		udpport = get(section, "udpport")
+		encrypted = bool(get(section, "encrypted", False))
+		server = teamtalk.TeamTalkServer(host, tcpport, udpport, use_ssl=encrypted)
 		tasks[executor.submit(wait_for_info, section, server)] = (section, server)
 	print(str(len(tasks)) + " servers loaded")
 	for future in as_completed(tasks):

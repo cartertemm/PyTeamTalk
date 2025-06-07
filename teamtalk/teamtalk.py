@@ -12,6 +12,8 @@ import shlex
 import time
 import threading
 import telnetlib
+import socket
+import ssl
 import warnings
 import functools
 
@@ -246,8 +248,8 @@ class TeamTalkError(Exception):
 class TeamTalkServer:
 	"""Represents a single TeamTalk server."""
 
-	def __init__(self, host=None, tcpport=10333):
-		self.set_connection_info(host, tcpport)
+	def __init__(self, host=None, tcpport=10333, udpport=0, use_ssl=False):
+		self.set_connection_info(host, tcpport, udpport, use_ssl)
 		self.con = None
 		self.pinger_thread = None
 		self.message_thread = None
@@ -266,26 +268,40 @@ class TeamTalkServer:
 		self._login_sequence = 0
 
 
-	def set_connection_info(self, host, tcpport=10333):
+	def set_connection_info(self, host, tcpport=10333, udpport=0, use_ssl=False):
 		"""Sets the server's host and TCP port"""
 		self.host = host
 		self.tcpport = tcpport
+		self.use_ssl = use_ssl
+		if udpport == 0:
+			self.udpport = tcpport
+		else:
+			self.udpport = udpport
 
 	def connect(self):
 		"""Initiates the connection to this server
 		Raises an exception on failure"""
-		self.con = telnetlib.Telnet(self.host, self.tcpport)
+		if self.use_ssl:
+			context = ssl.SSLContext()
+			context.verify_mode = ssl.CERT_NONE
+			context.check_hostname = False
+			sock = socket.create_connection((self.host, self.tcpport))
+			self.con = context.wrap_socket(sock, server_hostname=self.host)
+		else:
+			self.con = telnetlib.Telnet(self.host, self.tcpport)
 		# the first thing we should get is a welcome message
 		welcome = self.read_line(timeout=3)
 		if not welcome:
 			raise TimeoutError("Server failed to send welcome message in time")
 		welcome = welcome.decode()
 		event, params = parse_tt_message(welcome)
-		if event != "teamtalk":
+		if event == "teamtalk":
+			self.server_params = params
+			return True
+		else:
 			# error
 			# could mean we're working with a TT 4 server, or different protocol entirely
-			return
-		self.server_params = params
+			return False
 
 	def login(self, nickname, username, password, client, protocol="5.6", version="1.0", callback=None):
 		"""Attempts to log in to the server.
@@ -320,7 +336,22 @@ class TeamTalkServer:
 		"""Reads and returns a line from the server"""
 		if self.disconnecting:
 			return False
-		return self.con.read_until(b"\r\n", timeout)
+		if isinstance(self.con, telnetlib.Telnet):
+			return self.con.read_until(b"\r\n", timeout)
+		# For SSL connections, use recv to read data
+		buffer = b""
+		self.con.settimeout(timeout)
+		while True:
+			try:
+				chunk = self.con.recv(1)
+				if not chunk:
+					break
+				buffer += chunk
+				if b"\r\n" in buffer:
+					break
+			except socket.timeout:
+				break
+		return buffer
 
 	def send(self, line):
 		"""Sends a line to the server"""
