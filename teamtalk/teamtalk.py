@@ -1,20 +1,22 @@
+# -*- coding: utf-8 -*-
 """PyTeamTalk
 
-A wrapper around the TeamTalk 5 TCP API.
+A wrapper around the TeamTalk 5 TCP API with optional SSL support.
 
-author: Carter Temm
+author: Carter Temm. 
 license: MIT
-http://github.com/cartertemm/pyteamtalk
+https://github.com/cartertemm/pyteamtalk
 """
 
-
+# Encoding: UTF-8
 import shlex
 import time
 import threading
 import telnetlib
+import ssl
+import socket
 import warnings
 import functools
-
 
 # constants
 ## MSG Types
@@ -25,14 +27,14 @@ BROADCAST_MSG = 3
 CUSTOM_MSG = 4
 
 ## User Types (from library/teamtalk_lib/teamtalk/common.h)
-USERTYPE_NONE	 = 0x00
-USERTYPE_DEFAULT      = 0x01
-USERTYPE_ADMIN	= 0x02
+USERTYPE_NONE = 0x00
+USERTYPE_DEFAULT = 0x01
+USERTYPE_ADMIN = 0x02
 
 ## Command Errors
 
 CMD_ERR_IGNORE = -1
-CMD_ERR_SUCCESS = 0  #indicates success
+CMD_ERR_SUCCESS = 0  # indicates success
 CMD_ERR_SYNTAX_ERROR = 1000
 CMD_ERR_UNKNOWN_COMMAND = 1001
 CMD_ERR_MISSING_PARAMETER = 1002
@@ -113,9 +115,9 @@ USERRIGHT_ALL = 0x0013FFFF
 USERRIGHT_KNOWN_MASK = 0x001FFFFF
 
 ## Server Subscriptions (from library/teamTalkLib/teamtalk/common.h)
-SUBSCRIBE_NONE  = 0x00000000
-SUBSCRIBE_USER_MSG	  = 0x00000001
-SUBSCRIBE_CHANNEL_MSG   = 0x00000002
+SUBSCRIBE_NONE = 0x00000000
+SUBSCRIBE_USER_MSG = 0x00000001
+SUBSCRIBE_CHANNEL_MSG = 0x00000002
 SUBSCRIBE_BROADCAST_MSG = 0x00000004
 SUBSCRIBE_CUSTOM_MSG = 0x00000008
 SUBSCRIBE_VOICE = 0x00000010
@@ -124,28 +126,32 @@ SUBSCRIBE_DESKTOP = 0x00000040
 SUBSCRIBE_DESKTOPINPUT = 0x00000080
 SUBSCRIBE_MEDIAFILE = 0x00000100
 SUBSCRIBE_ALL = 0x000001FF
-SUBSCRIBE_LOCAL_DEFAULT = (SUBSCRIBE_USER_MSG |
-	SUBSCRIBE_CHANNEL_MSG |
-	SUBSCRIBE_BROADCAST_MSG |
-	SUBSCRIBE_CUSTOM_MSG |
-	SUBSCRIBE_MEDIAFILE)
-SUBSCRIBE_PEER_DEFAULT = (SUBSCRIBE_ALL & ~SUBSCRIBE_DESKTOPINPUT)
+SUBSCRIBE_LOCAL_DEFAULT = (
+	SUBSCRIBE_USER_MSG
+	| SUBSCRIBE_CHANNEL_MSG
+	| SUBSCRIBE_BROADCAST_MSG
+	| SUBSCRIBE_CUSTOM_MSG
+	| SUBSCRIBE_MEDIAFILE
+)
+SUBSCRIBE_PEER_DEFAULT = SUBSCRIBE_ALL & ~SUBSCRIBE_DESKTOPINPUT
 SUBSCRIBE_INTERCEPT_USER_MSG = 0x00010000
 SUBSCRIBE_INTERCEPT_CHANNEL_MSG = 0x00020000
 # SUBSCRIBE_INTERCEPT_BROADCAST_MSG	 = 0x00040000
-SUBSCRIBE_INTERCEPT_CUSTOM_MSG  = 0x00080000
-SUBSCRIBE_INTERCEPT_VOICE	   = 0x00100000
-SUBSCRIBE_INTERCEPT_VIDEOCAPTURE= 0x00200000
-SUBSCRIBE_INTERCEPT_DESKTOP	 = 0x00400000
+SUBSCRIBE_INTERCEPT_CUSTOM_MSG = 0x00080000
+SUBSCRIBE_INTERCEPT_VOICE = 0x00100000
+SUBSCRIBE_INTERCEPT_VIDEOCAPTURE = 0x00200000
+SUBSCRIBE_INTERCEPT_DESKTOP = 0x00400000
 # SUBSCRIBE_INTERCEPT_DESKTOPINPUT	  = 0x00800000
 SUBSCRIBE_INTERCEPT_MEDIAFILE = 0x01000000
 SUBSCRIBE_INTERCEPT_ALL = 0x017B0000
+# local udp port.
+localUdp = 54321
 
 
 def split_parts(msg):
 	"""Splits a key=value pair into a tuple."""
 	index = msg.find("=")
-	return (msg[:index], msg[index+1:])
+	return (msg[:index], msg[index + 1 :])
 
 
 def split_quoted(message):
@@ -154,14 +160,14 @@ def split_quoted(message):
 	inquote = False
 	buffer = ""
 	final = []
-	while pos < len(message)-1:
+	while pos < len(message) - 1:
 		pos += 1
 		token = message[pos]
 		if token == " " and not inquote:
 			final.append(buffer)
 			buffer = ""
 			continue
-		if token == "\"" and message[pos-1] != "\\":
+		if token == '"' and message[pos - 1] != "\\":
 			inquote = not inquote
 		buffer += token
 	final.append(buffer)
@@ -189,7 +195,7 @@ def parse_tt_message(message):
 				for val in v:
 					if val.isdigit():
 						lst.append(int(val))
-					# I've never once seem values take a form other than int
+					# I've never once seen values take a form other than int
 					# better to assume it is possible, however
 					else:
 						lst.append(val)
@@ -235,6 +241,7 @@ def build_tt_message(event, params):
 
 class TeamTalkError(Exception):
 	"""Raised on an error event from the server"""
+
 	def __init__(self, code, message):
 		self.code = code
 		self.message = message
@@ -246,35 +253,50 @@ class TeamTalkError(Exception):
 class TeamTalkServer:
 	"""Represents a single TeamTalk server."""
 
-	def __init__(self, host=None, tcpport=10333):
-		self.set_connection_info(host, tcpport)
+	def __init__(self, host=None, tcpport=10333, udpPort=0, use_ssl=False):
+		self.set_connection_info(host, tcpport, udpPort, use_ssl)
 		self.con = None
 		self.pinger_thread = None
 		self.message_thread = None
 		self.disconnecting = False
 		self.logging_in = False
+		self.gettingAccounts = False
 		self.logged_out = False
 		self.current_id = 0
 		self.last_id = 0
 		self.subscriptions = {}
 		self.channels = []
 		self.users = []
+		self.bans = []
+		self.accounts = []
 		self.me = {}
 		self.server_params = {}
 		self.files = []
 		self._subscribe_to_internal_events()
 		self._login_sequence = 0
 
-
-	def set_connection_info(self, host, tcpport=10333):
+	def set_connection_info(self, host, tcpport=10333, udpPort=0, use_ssl=False):
 		"""Sets the server's host and TCP port"""
 		self.host = host
 		self.tcpport = tcpport
+		self.use_ssl = use_ssl
+		if udpPort == 0:
+			self.udpPort = tcpport
+		else:
+			self.udpPort = udpPort
 
 	def connect(self):
 		"""Initiates the connection to this server
 		Raises an exception on failure"""
-		self.con = telnetlib.Telnet(self.host, self.tcpport)
+		if self.use_ssl:
+			context = ssl.create_default_context()
+			context.check_hostname = False
+			context.verify_mode = ssl.CERT_NONE
+			raw_sock = socket.create_connection((self.host, self.tcpport))
+			self.con = context.wrap_socket(raw_sock, server_hostname=self.host)
+		else:
+			self.con = telnetlib.Telnet(self.host, self.tcpport)
+		"""
 		# the first thing we should get is a welcome message
 		welcome = self.read_line(timeout=3)
 		if not welcome:
@@ -286,13 +308,29 @@ class TeamTalkServer:
 			# could mean we're working with a TT 4 server, or different protocol entirely
 			return
 		self.server_params = params
+"""
+		welcome = self.read_line(timeout=3)
+		if not welcome:
+			raise TimeoutError("Server failed to send welcome message in time")
+		event, params = parse_tt_message(welcome.decode())
+		if event == "teamtalk":
+			self.server_params = params
 
-	def login(self, nickname, username, password, client, protocol="5.6", version="1.0", callback=None):
+	def login(
+		self,
+		nickname,
+		username,
+		password,
+		client,
+		protocol="5.6",
+		version="1.0",
+		callback=None,
+	):
 		"""Attempts to log in to the server.
 		This should be called immediately after connect to prevent timing out.
 		Blocks until the login sequence has completed.
 		If callback is specified, it behaves the same as handle_messages for the duration of this sequence.
-		To intersept failed logins, provide a callback and check for the "error" event.
+		To intercept failed logins, provide a callback and check for the "error" event.
 		"""
 		message = build_tt_message(
 			"login",
@@ -320,7 +358,24 @@ class TeamTalkServer:
 		"""Reads and returns a line from the server"""
 		if self.disconnecting:
 			return False
-		return self.con.read_until(b"\r\n", timeout)
+		if isinstance(self.con, telnetlib.Telnet):
+			return self.con.read_until(b"\r\n", timeout)
+		# For SSL connections, use recv to read data
+		buffer = b""
+		self.con.settimeout(timeout)
+		while True:
+			try:
+				chunk = self.con.recv(1)
+				if not chunk:
+					break
+				buffer += chunk
+				if b"\r\n" in buffer:
+					break
+			except socket.timeout:
+				break
+		return buffer
+
+		# return self.con.read_until(b"\r\n", timeout)
 
 	def send(self, line):
 		"""Sends a line to the server"""
@@ -333,6 +388,10 @@ class TeamTalkServer:
 			line += b"\r\n"
 		self.con.write(line)
 
+	def is_connected(self):
+		"""Check if the bot is currently connected to the server."""
+		return self.con is not None and not self.disconnecting
+
 	def disconnect(self):
 		"""Disconnect from this server.
 		Signals all threads to stop"""
@@ -342,9 +401,9 @@ class TeamTalkServer:
 	def handle_messages(self, timeout=1, callback=None):
 		"""Processes all incoming messages
 		If callback is specified, it will be ran every time a new line is received from the server (or timeout seconds) along with an instance of this class, the event name, and parameters.
-		Please note: If timeout is None (or unspecified), the callback function may take a while to execute in instances when we aren't getting packets. This behavior may not be desireable for many applications.
-			If in doubt, set a timeout.
-			Also be wary of extremely small timeouts when handling larger lines
+		Please note: If timeout is None (or unspecified), the callback function may take a while to execute in instances when we aren't getting packets. This behavior may not be desirable for many applications.
+				If in doubt, set a timeout.
+				Also be wary of extremely small timeouts when handling larger lines
 		"""
 		while not self.disconnecting:
 			if self._login_sequence == 2:
@@ -355,7 +414,7 @@ class TeamTalkServer:
 			if line == b"pong":
 				# response to ping, which is handled internally
 				# we don't actually care about getting something back, we just send them to make the server happy
-				line = b"" # drop it
+				line = b""  # drop it
 			try:
 				line = line.decode()
 			except UnicodeDecodeError:
@@ -366,21 +425,23 @@ class TeamTalkServer:
 			if not line:
 				if callable(callback):
 					callback(self, "", {})
-				continue # nothing to do
+				continue  # nothing to do
 			event, params = parse_tt_message(line)
 			event = event.lower()
 			if event == "error":
 				# indicates success or irrelevance
-				if params["number"] == CMD_ERR_IGNORE or params["number"] == CMD_ERR_SUCCESS:
+				if (
+					params["number"] == CMD_ERR_IGNORE
+					or params["number"] == CMD_ERR_SUCCESS
+				):
 					continue
-				raise TeamTalkError(params["number"], params["message"])
+				raise RuntimeError(str(params["number"]) + ": " + params["message"])
 			# Call messages for the event if necessary
 			for func in self.subscriptions.get(event, []):
 				func(self, params)
 			# finally, call the callback
 			if callable(callback):
 				callback(self, event, params)
-
 
 	def _sleep(self, seconds):
 		"""Like time.sleep, but immediately halts execution if we need to disconnect from a server"""
@@ -391,7 +452,7 @@ class TeamTalkServer:
 	def handle_pings(self):
 		"""Handles pinging the server at a reasonable interval.
 		Intervals are calculated based on the server's usertimeout value.
-		This function always runs in it's own thread."""
+		This function always runs in its own thread."""
 		pingtime = 0
 		while not self.disconnecting:
 			self.send("ping")
@@ -435,7 +496,7 @@ class TeamTalkServer:
 
 	def _subscribe_to_internal_events(self):
 		"""Subscribes to all internal events that keep track of the server's state.
-			self.users, self.me, self.channels, self.server_params, etc.
+				self.users, self.me, self.channels, self.server_params, etc.
 		Called automatically
 		"""
 		funcs = [i for i in dir(self) if i.startswith("_handle_")]
@@ -450,7 +511,8 @@ class TeamTalkServer:
 		If index is False, returns a dict. Otherwise, returns the channel's index in self.channels
 		If id is of type str, look for matching names
 		If id is an int, look for matching chanid's
-		If id is a dict, we assume params are lazily being passed and try searching for a chanid"""
+		If id is a dict, we assume params are lazily being passed and try searching for a chanid
+		"""
 		if isinstance(id, dict):
 			id = id.get("chanid")
 			if not id:
@@ -467,11 +529,18 @@ class TeamTalkServer:
 				else:
 					return channel
 
+	def get_channel_name_by_id(self, chanid):
+		"""Retrieve the channel name based on its ID."""
+		for channel in self.channels:
+			if channel["chanid"] == chanid:
+				return channel["channel"]
+		return None  # Return None if the channel ID is not found
+
 	def get_user(self, id, index=False):
 		"""Retrieves attributes for users with the requested id.
 		If index is False, returns a dict. Otherwise, returns the user's index in self.users
 		If id is of type str, look for matching nicknames
-			Be careful, though, as teamtalk imposes no limit on users with identical nicknames.
+				Be careful, though, as teamtalk imposes no limit on users with identical nicknames.
 		If id is an int, look for matching userids
 		If id is a dict, we assume params are lazily being passed and try searching for a userid
 		"""
@@ -496,9 +565,10 @@ class TeamTalkServer:
 		If channel is given, limit the search to only files in the specified channel, can be anything accepted by get_channel
 		If index is False, returns a dict. Otherwise, returns the file's index in self.files
 		If id is of type str, look for matching filenames
-			Be careful, though, as teamtalk imposes no limit on files with the same name in different channels.
+				Be careful, though, as teamtalk imposes no limit on files with the same name in different channels.
 		If id is an int, look for matching fileids
-		If id is a dict, we assume params are lazily being passed and try searching for a fileid"""
+		If id is a dict, we assume params are lazily being passed and try searching for a fileid
+		"""
 		if isinstance(id, dict):
 			id = id.get("fileid")
 			if not id:
@@ -522,7 +592,8 @@ class TeamTalkServer:
 	def get_users_in_channel(self, id=None):
 		"""Retrieves a list of users in the specified channel.
 		id can be anything accepted by get_channel
-		There is one exception, however. If None, looks for users that aren't said to be in any channel"""
+		There is one exception, however. If None, looks for users that aren't said to be in any channel
+		"""
 		users = []
 		if id:
 			channel = self.get_channel(id)
@@ -535,7 +606,7 @@ class TeamTalkServer:
 	def get_role(self, user=None):
 		"""Returns an str representing the provided user's role.
 		User can be anything accepted by get_user
-			If None, returns our role instead
+				If None, returns our role instead
 		Possible values are "default", "admin" and "none"
 		"""
 		if user:
@@ -589,6 +660,70 @@ class TeamTalkServer:
 		msg = build_tt_message("kick", params)
 		self.send(msg)
 
+	def ban(self, target, channel=None, id=None):
+		"""bans the provided user from a channel (if specified) otherwise the server.
+		Target can be anything accepted by get_user
+		Channel can be anything accepted by get_channel"""
+		target = self.get_user(target)
+		target = target.get("userid")
+		params = {"userid": target}
+		if channel:
+			channel = self.get_channel(channel)
+			channel = channel.get("chanid")
+			params["chanid"] = channel
+		if id:
+			params["id"] = id
+		msg = build_tt_message("ban", params)
+		self.send(msg)
+
+	def ban_by_ip(self, ip_address, channel=None, id=None):
+		params = {"ipaddr": ip_address}
+		if channel:
+			channel = self.get_channel(channel)
+			params["chanid"] = channel.get("chanid")
+		msg = build_tt_message("ban", params)
+		self.send(msg)
+
+	def unban(self, target, channel=None, id=None):
+		"""Unbans the provided user from a channel (if specified) otherwise the server.
+		Target can be an ip address
+		Channel can be anything accepted by get_channel"""
+		params = {"ipaddr": target}
+		if channel:
+			channel = self.get_channel(channel)
+			channel = channel.get("chanid")
+			params["chanid"] = channel
+		if id:
+			params["id"] = id
+		msg = build_tt_message("unban", params)
+		self.send(msg)
+
+	def getBans(self):
+		self.send("listbans id=101")
+		self._sleep(0.2)
+		while self.current_id == 101:
+			self._sleep(0.05)
+		return self.bans
+
+	def getAccounts(self):
+		msg = build_tt_message("listaccounts", {"id": 10})
+		self.send(msg)
+		self._sleep(0.2)
+		while self.gettingAccounts:
+			self._sleep(0.05)
+		return self.accounts
+
+	def newAccount(self, username: str, password: str, usertype: int, userRights=[]):
+		params = {"username": username, "password": password, "usertype": usertype}
+		if usertype < 2:
+			params.update({"userrights": USERRIGHT_DEFAULT})
+		msg = build_tt_message("newaccount", params)
+		self.send(msg)
+
+	def deleteAccount(self, username: str):
+		msg = build_tt_message("delaccount", {"username": username})
+		self.send(msg)
+
 	def move(self, user, destination, id=None):
 		"""Moves the provided user to destination.
 		User can be anything accepted by get_user
@@ -611,7 +746,7 @@ class TeamTalkServer:
 		1 Away
 		2 Question
 		"""
-		params = {"statusmode": statusmode, "statusmsg" : statusmsg}
+		params = {"statusmode": statusmode, "statusmsg": statusmsg}
 		if id:
 			params["id"] = id
 		msg = build_tt_message("changestatus", params)
@@ -641,7 +776,7 @@ class TeamTalkServer:
 		"""Sends a channel message.
 		Content is the text that will be sent
 		To can be None (current channel) or anything accepted by get_channel
-			Note that only admins are able to send messages to channels without joining first.
+				Note that only admins are able to send messages to channels without joining first.
 		"""
 		if to:
 			to = self.get_channel(to)
@@ -699,9 +834,10 @@ class TeamTalkServer:
 
 	def subscribe_to(self, user, subscription, id=None):
 		"""Subscribe to an event on this server for a given user.
-			Not to be confused with subscribe, which maps events to local functions.
+				Not to be confused with subscribe, which maps events to local functions.
 		user can be anything accepted by get_user
-		subscription can be any teamtalk.SUBSCRIBE_* constant, or a bitmask for multiple"""
+		subscription can be any teamtalk.SUBSCRIBE_* constant, or a bitmask for multiple
+		"""
 		user = self.get_user(user)
 		user = user.get("userid")
 		params = {"userid": user, "sublocal": subscription}
@@ -712,9 +848,10 @@ class TeamTalkServer:
 
 	def unsubscribe_from(self, user, subscription, id=None):
 		"""Unsubscribes from an event on this server for a given user.
-			Not to be confused with subscribe, which maps events to local functions.
+				Not to be confused with subscribe, which maps events to local functions.
 		user can be anything accepted by get_user
-		subscription can be any teamtalk.SUBSCRIBE_* constant, or a bitmask for multiple"""
+		subscription can be any teamtalk.SUBSCRIBE_* constant, or a bitmask for multiple
+		"""
 		user = self.get_user(user)
 		user = user.get("userid")
 		params = {"userid": user, "sublocal": subscription}
@@ -723,26 +860,33 @@ class TeamTalkServer:
 		msg = build_tt_message("unsubscribe", params)
 		self.send(msg)
 
-
 	# Internal event responses
 	# We subscribe to these to ensure we have the latest info
 	# These take precedence over custom responses
 	# methods are static because instances of this class are sent along to every response already, adding self would
 	# be a redundancy
 
-	@staticmethod
+
 	def _handle_error(self, params):
 		"""Event fired when something goes wrong.
-		params["number"] contains the code, and params["message"] is a human-friendly explanation of what went wrong"""
+		params["number"] contains the code, and params["message"] is a human-friendly explanation of what went wrong
+		"""
 		print(f"error ({params['number']}): {params['message']}")
 
-	@staticmethod
+	def _handle_userbanned(self, params):
+		if params not in self.bans:
+			self.bans.append(params)
+
+	def _handle_useraccount(self, params):
+		if params not in self.accounts:
+			self.accounts.append(params)
+
 	def _handle_begin(self, params):
 		"""Event fired to acknowledge the start of an ordered response.
 		When a sent message contains the field "id=*", responses take the form:
-			begin id=*
-			contents
-			end id=*
+				begin id=*
+				contents
+				end id=*
 		Messages are sent this way when ordering needs to be preserved.
 		"""
 		self.current_id = params["id"]
@@ -750,14 +894,18 @@ class TeamTalkServer:
 		# Handle these differently
 		if self.current_id == 1:
 			self.logging_in = True
+		if self.current_id == 10:
+			self.accounts.clear()
+			self.gettingAccounts = True
+		if self.current_id == 101:
+			self.bans.clear()
 
-	@staticmethod
 	def _handle_end(self, params):
 		"""Event fired to acknowledge the end of an ordered response.
 		When a sent message contains the field "id=*", responses take the form:
-			begin id=*
-			contents
-			end id=*
+				begin id=*
+				contents
+				end id=*
 		Messages are sent this way when ordering needs to be preserved.
 		"""
 		self.current_id = 0
@@ -766,8 +914,9 @@ class TeamTalkServer:
 		if params["id"] == 1:
 			self.logging_in = False
 			self._login_sequence = 2
+		if params["id"] == 10:
+			self.gettingAccounts = False
 
-	@staticmethod
 	def _handle_loggedin(self, params):
 		"""Event fired when a user has just logged in.
 		Is also sent during login for every currently logged in user"""
@@ -779,7 +928,7 @@ class TeamTalkServer:
 			# I don't think this should happen, but just to be sure
 			self.users[user_index].update(params)
 
-	@staticmethod
+
 	def _handle_loggedout(self, params):
 		"""Event fired when a user logs out"""
 		if not params.get("userid") or params["userid"] == self.me["userid"]:
@@ -790,20 +939,17 @@ class TeamTalkServer:
 			if user:
 				self.users.remove(user)
 
-	@staticmethod
 	def _handle_accepted(self, params):
 		"""Event fired immediately after an accepted login.
 		Contains information about the current user"""
 		self.me.update(params)
 		self.logged_out = False
 
-	@staticmethod
 	def _handle_serverupdate(self, params):
 		"""Event fired after login that exposes more info to a client
 		May also mean that attributes of this server have changed"""
 		self.server_params.update(params)
 
-	@staticmethod
 	def _handle_addchannel(self, params):
 		"""Event fired when a new channel has been created
 		Can also be used to tell a newly connected user about a channel"""
@@ -814,59 +960,51 @@ class TeamTalkServer:
 			# shouldn't happen
 			self.channels[chan_index].update(params)
 
-	@staticmethod
 	def _handle_updatechannel(self, params):
 		"""Event fired when an attribute of a channel has changed"""
 		chan_index = self.get_channel(params["chanid"], index=True)
 		if chan_index:
 			self.channels[chan_index].update(params)
 
-	@staticmethod
 	def _handle_removechannel(self, params):
 		"""Event fired when a channel is deleted"""
 		channel = self.get_channel(params["chanid"])
 		if channel:
 			self.channels.remove(channel)
 
-	@staticmethod
 	def _handle_joined(self, params):
 		"""Event fired when this user joins a channel"""
 		self.me.update(params)
 
-	@staticmethod
 	def _handle_left(self, params):
 		"""Event fired when this user leaves a channel"""
 		del self.me["chanid"]
 
-	@staticmethod
 	def _handle_adduser(self, params):
 		"""Event fired when a user is added (manually joins or is moved) to a channel.
-		Can also be used to tell a newly connected user about the location of other users on the server"""
+		Can also be used to tell a newly connected user about the location of other users on the server
+		"""
 		user_index = self.get_user(params["userid"], index=True)
 		if user_index != None:
 			self.users[user_index].update(params)
 
-	@staticmethod
 	def _handle_removeuser(self, params):
 		"""Event fired when a user is removed from (or leaves) a channel"""
 		user_index = self.get_user(params["userid"], index=True)
 		if user_index != None:
 			del self.users[user_index]["chanid"]
 
-	@staticmethod
 	def _handle_updateuser(self, params):
 		"""Event fired when an attribute of a user has changed"""
 		user_index = self.get_user(params["userid"], index=True)
 		if user_index != None:
 			self.users[user_index].update(params)
 
-	@staticmethod
 	def _handle_addfile(self, params):
 		"""Event fired after a user joins a channel where files are available.
 		Sent for every downloadable file."""
 		self.files.append(params)
 
-	@staticmethod
 	def _handle_removefile(self, params):
 		"""Event fired when a file is removed from a channel."""
 		file_index = self.get_file(params["filename"], params["chanid"], index=True)
