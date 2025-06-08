@@ -261,9 +261,13 @@ class TeamTalkServer:
 		self.subscriptions = {}
 		self.channels = []
 		self.users = []
+		self.bans = []
+		self.accounts = []
 		self.me = {}
 		self.server_params = {}
 		self.files = []
+		self.getting_accounts = False
+		self.getting_bans = False
 		self._subscribe_to_internal_events()
 		self._login_sequence = 0
 
@@ -620,6 +624,72 @@ class TeamTalkServer:
 		msg = build_tt_message("kick", params)
 		self.send(msg)
 
+	def ban(self, target, channel=None, id=None):
+		"""bans the provided user from a channel (if specified) otherwise the server.
+		Target can be anything accepted by get_user
+		Channel can be anything accepted by get_channel"""
+		target = self.get_user(target)
+		target = target.get("userid")
+		params = {"userid": target}
+		if channel:
+			channel = self.get_channel(channel)
+			channel = channel.get("chanid")
+			params["chanid"] = channel
+		if id:
+			params["id"] = id
+		msg = build_tt_message("ban", params)
+		self.send(msg)
+
+	def ban_by_ip(self, ip_address, channel=None, id=None):
+		params = {"ipaddr": ip_address}
+		if channel:
+			channel = self.get_channel(channel)
+			params["chanid"] = channel.get("chanid")
+		msg = build_tt_message("ban", params)
+		self.send(msg)
+
+	def unban(self, target, channel=None, id=None):
+		"""Unbans the provided user from a channel (if specified) otherwise the server.
+		Target can be an ip address
+		Channel can be anything accepted by get_channel"""
+		params = {"ipaddr": target}
+		if channel:
+			channel = self.get_channel(channel)
+			channel = channel.get("chanid")
+			params["chanid"] = channel
+		if id:
+			params["id"] = id
+		msg = build_tt_message("unban", params)
+		self.send(msg)
+
+	def get_bans(self):
+		msg = build_tt_message("listbans", {"id": 101})
+		self.getting_bans = True
+		self.send(msg)
+		self._sleep(0.2)
+		while self.getting_bans:
+			self._sleep(0.05)
+		return self.bans
+
+	def get_accounts(self):
+		msg = build_tt_message("listaccounts", {"index": 0, "count": 1000000, "id": 10})
+		self.getting_accounts = True
+		self.send(msg)
+		while self.getting_accounts:
+			self._sleep(0.05)
+		return self.accounts
+
+	def new_account(self, username, password, usertype, userRights=[]):
+		params = {"username": username, "password": password, "usertype": usertype}
+		if usertype < 2:
+			params.update({"userrights": USERRIGHT_DEFAULT})
+		msg = build_tt_message("newaccount", params)
+		self.send(msg)
+
+	def delete_account(self, username: str):
+		msg = build_tt_message("delaccount", {"username": username})
+		self.send(msg)
+
 	def move(self, user, destination, id=None):
 		"""Moves the provided user to destination.
 		User can be anything accepted by get_user
@@ -781,6 +851,10 @@ class TeamTalkServer:
 		# Handle these differently
 		if self.current_id == 1:
 			self.logging_in = True
+		if self.current_id == 10 and self.getting_accounts:
+			self.accounts.clear()
+		if self.current_id == 101 and self.getting_bans:
+			self.bans.clear()
 
 	@staticmethod
 	def _handle_end(self, params):
@@ -797,6 +871,10 @@ class TeamTalkServer:
 		if params["id"] == 1:
 			self.logging_in = False
 			self._login_sequence = 2
+		if params["id"] == 10 and self.getting_accounts:
+			self.getting_accounts = False
+		if params["id"] == 101 and self.getting_bans:
+			self.getting_bans = False
 
 	@staticmethod
 	def _handle_loggedin(self, params):
@@ -903,3 +981,13 @@ class TeamTalkServer:
 		file_index = self.get_file(params["filename"], params["chanid"], index=True)
 		if file_index != None:
 			del self.files[file_index]
+
+	@staticmethod
+	def _handle_useraccount(self, params):
+		"""Event fired with account information after a call to list the accounts on the server."""
+		self.accounts.append(params)
+
+	@staticmethod
+	def _handle_userbanned(params):
+		"""Event fired with ban information after a call to list the bans on the server."""
+		self.bans.append(params)
