@@ -191,7 +191,7 @@ def parse_tt_message(message):
 				for val in v:
 					if val.isdigit():
 						lst.append(int(val))
-					# I've never once seem values take a form other than int
+					# I've never once seen values take a form other than int
 					# better to assume it is possible, however
 					else:
 						lst.append(val)
@@ -377,7 +377,7 @@ class TeamTalkServer:
 	def handle_messages(self, timeout=1, callback=None):
 		"""Processes all incoming messages
 		If callback is specified, it will be ran every time a new line is received from the server (or timeout seconds) along with an instance of this class, the event name, and parameters.
-		Please note: If timeout is None (or unspecified), the callback function may take a while to execute in instances when we aren't getting packets. This behavior may not be desireable for many applications.
+		Please note: If timeout is None (or unspecified), the callback function may take a while to execute in instances when we aren't getting packets. This behavior may not be desirable for many applications.
 			If in doubt, set a timeout.
 			Also be wary of extremely small timeouts when handling larger lines
 		"""
