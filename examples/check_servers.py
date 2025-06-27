@@ -39,7 +39,7 @@ def load_config(file="config.ini"):
 	global config
 	try:
 		config = configparser.ConfigParser()
-	except configobj.Error as exc:
+	except configparser.Error as exc:
 		print("There was an error validating the config")
 		print(exc)
 	loaded = config.read(file)
@@ -82,7 +82,7 @@ def wait_for_info(section, server):
 			return
 		if event and event == "error":
 			print("Skipping " + section)
-			self.disconnect()
+			server.disconnect()
 			return
 
 	server.connect()
