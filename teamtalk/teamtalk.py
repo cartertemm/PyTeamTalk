@@ -988,6 +988,6 @@ class TeamTalkServer:
 		self.accounts.append(params)
 
 	@staticmethod
-	def _handle_userbanned(params):
+	def _handle_userbanned(self, params):
 		"""Event fired with ban information after a call to list the bans on the server."""
 		self.bans.append(params)
