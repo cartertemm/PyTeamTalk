@@ -1,0 +1,27 @@
+[project]
+name = "PyTeamTalk"
+version = "0.1"
+description = "A human-friendly wrapper around the TeamTalk 5 TCP API"
+readme = "readme.md"
+requires-python = ">=3"
+authors = [
+    { name = "Carter Temm", email = "crtbraille@gmail.com" }
+]
+license = { text = "MIT" }
+urls = { Homepage = "http://github.com/cartertemm/pyteamtalk" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+]
+dependencies = [
+    "telnetlib-313-and-up; python_version >= '3.13'"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
