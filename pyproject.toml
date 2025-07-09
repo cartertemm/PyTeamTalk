@@ -7,14 +7,13 @@ requires-python = ">=3"
 authors = [
     { name = "Carter Temm", email = "crtbraille@gmail.com" }
 ]
-license = { text = "MIT" }
 urls = { Homepage = "http://github.com/cartertemm/pyteamtalk" }
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
 ]
+license = "MIT"
 dependencies = [
     "telnetlib-313-and-up; python_version >= '3.13'"
 ]
