@@ -8,7 +8,13 @@ It facilitates the process of creating TeamTalk bots and controllers, many times
 
 This code has been tested and confirmed to work under python 3.8, though it probably does so just as well under other 3* versions. I make no promises about examples.
 
-Installing from source:
+From a terminal or command prompt, just do:
+
+```
+pip install pyteamtalk
+```
+
+Or to install from source:
 
 ```
 git clone http://github.com/cartertemm/pyteamtalk
@@ -38,7 +44,7 @@ Having trouble? Need something else? Give me a shout on [twitter](https://twitte
 
 The following still needs to be done
 
-* Support sending and receiving files
-* Support encrypted servers
-* Support servers where users are unable to see other users
-* Add to pip
+- [x] Support encrypted servers
+- [x] Publish to PyPI
+- [ ] Support sending and receiving files
+- [ ] Support servers where users are unable to see other users
