@@ -1,6 +1,6 @@
 [project]
 name = "PyTeamTalk"
-version = "0.1"
+version = "0.2"
 description = "A human-friendly wrapper around the TeamTalk 5 TCP API"
 readme = "readme.md"
 requires-python = ">=3"
